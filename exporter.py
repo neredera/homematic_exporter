@@ -80,7 +80,7 @@ class HomematicMetricsProcessor(threading.Thread):
     'HM-LC-Dim1T-FM': [1],
     'HM-LC-RGBW-WM': [1, 2, 3],
     'HM-LC-Sw1-Pl-DN-R5': [1],
-    'HM-LC-Sw1-FM': [1, 2],
+    'HM-LC-Sw1-FM': [1],
     'HM-LC-Sw2-FM': [1, 2],
     'HM-OU-CFM-Pl': [1, 2],
     'HM-OU-CFM-TW': [1, 2],
@@ -204,7 +204,7 @@ class HomematicMetricsProcessor(threading.Thread):
             if allowFailedChannel:
               logging.debug("Error reading paramset for device {} of type {} in parent type {} (expected)".format(devAddress, devType, devParentType))
             else:
-              logging.debug("Error reading paramset for device {} of type {} in parent type {} (unexpected)".format(devAddress, devType, devParentType))
+              logging.info("Error reading paramset for device {} of type {} in parent type {} (unexpected)".format(devAddress, devType, devParentType))
               raise
 
           for key in paramsetDescription:
@@ -259,7 +259,7 @@ class HomematicMetricsProcessor(threading.Thread):
   def process_single_value(self, deviceAddress, deviceType, parentDeviceAddress, parentDeviceType, paramType, key, value):
     logging.debug("Found {} param {} with value {}".format(paramType, key, value))
 
-    if not value:
+    if value is '' or value is None:
       return
 
     gaugename = key.lower()
@@ -373,8 +373,8 @@ if __name__ == '__main__':
   if ARGS.dump_devices:
     print(pformat(PROCESSOR.fetch_devices_list()))
   elif ARGS.dump_parameters:
-#    print("getParamsetDescription:")
-#    print(pformat(PROCESSOR.fetch_param_set_description(ARGS.dump_parameters)))
+    print("getParamsetDescription:")
+    print(pformat(PROCESSOR.fetch_param_set_description(ARGS.dump_parameters)))
     print("getParamset:")
     print(pformat(PROCESSOR.fetch_param_set(ARGS.dump_parameters)))
   else:
