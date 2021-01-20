@@ -210,15 +210,26 @@ class HomematicMetricsProcessor(threading.Thread):
           for key in paramsetDescription:
             paramDesc = paramsetDescription.get(key)
             paramType = paramDesc.get('TYPE')
+            paramState = paramset.get(key)
+            if paramState is None:
+              paramIsUndefined = True
+              paramValue = None
+            else:
+              paramIsUndefined = paramState.get('UNDEFINED')
+              paramValue = paramState.get('VALUE')
+
+            if paramIsUndefined:
+              continue # Ignore this parameter, we have no value (yet)
+
             if paramType in ['FLOAT', 'INTEGER', 'BOOL']:
-              self.process_single_value(devAddress, devType, devParentAddress, devParentType, paramType, key, paramset.get(key))
+              self.process_single_value(devAddress, devType, devParentAddress, devParentType, paramType, key, paramValue)
             elif paramType == 'ENUM':
-              logging.debug("Found {}: desc: {} key: {}".format(paramType, paramDesc, paramset.get(key)))
-              self.process_enum(devAddress, devType, devParentAddress, devParentType, paramType, key, paramset.get(key), paramDesc.get('VALUE_LIST'))
+              logging.debug("Found {}: desc: {} key: {}".format(paramType, paramDesc, paramValue))
+              self.process_enum(devAddress, devType, devParentAddress, devParentType, paramType, key, paramValue, paramDesc.get('VALUE_LIST'))
             else:
               # ATM Unsupported like HEATING_CONTROL_HMIP.PARTY_TIME_START,
               # HEATING_CONTROL_HMIP.PARTY_TIME_END, COMBINED_PARAMETER or ACTION
-              logging.debug("Unknown paramType {}, desc: {}, key: {}".format(paramType, paramDesc, paramset.get(key)))
+              logging.debug("Unknown paramType {}, desc: {}, undefined: {}, key: {}".format(paramType, paramDesc, paramIsUndefined, paramValue))
 
           if paramset:
             logging.debug("ParamsetDescription for {}".format(devAddress))
@@ -246,7 +257,9 @@ class HomematicMetricsProcessor(threading.Thread):
 
   def fetch_param_set(self, address):
     with self.create_proxy() as proxy:
-      return proxy.getParamset(address, 'VALUES')
+      # mode=1 allows to read undefined values
+      # (if there is any undefined value in the paramset, BidcosRF does not return the parameset)
+      return proxy.getParamset(address, 'VALUES', 1)
 
   def resolve_mapped_name(self, deviceAddress, parentDeviceAddress):
     if deviceAddress in self.mapped_names:
@@ -259,7 +272,7 @@ class HomematicMetricsProcessor(threading.Thread):
   def process_single_value(self, deviceAddress, deviceType, parentDeviceAddress, parentDeviceType, paramType, key, value):
     logging.debug("Found {} param {} with value {}".format(paramType, key, value))
 
-    if value is '' or value is None:
+    if value == '' or value is None:
       return
 
     gaugename = key.lower()
