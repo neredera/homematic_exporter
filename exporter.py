@@ -203,6 +203,7 @@ class HomematicMetricsProcessor(threading.Thread):
           except xmlrpc.client.Fault:
             if allowFailedChannel:
               logging.debug("Error reading paramset for device {} of type {} in parent type {} (expected)".format(devAddress, devType, devParentType))
+              continue
             else:
               logging.info("Error reading paramset for device {} of type {} in parent type {} (unexpected)".format(devAddress, devType, devParentType))
               raise
