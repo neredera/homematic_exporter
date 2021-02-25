@@ -114,7 +114,7 @@ class HomematicMetricsProcessor(threading.Thread):
     read_names_summary = Summary('read_names_seconds', 'Time spent reading names from CCU', labelnames=['ccu'], namespace=self.METRICS_NAMESPACE)
 
     gathering_loop_counter = 1
-    
+
     if len(self.mapped_names) == 0:
       # if no custom mapped names are given we use them from the ccu.
       self.reload_names_active = True
@@ -173,70 +173,71 @@ class HomematicMetricsProcessor(threading.Thread):
   def generate_metrics(self):
     logging.info("Gathering metrics")
 
-    for device in self.fetch_devices_list():
-      devType = device.get('TYPE')
-      devParentType = device.get('PARENT_TYPE')
-      devParentAddress = device.get('PARENT')
-      devAddress = device.get('ADDRESS')
-      if devParentAddress == '':
-        if devType in self.supported_device_types:
-          devChildcount = len(device.get('CHILDREN'))
-          logging.info("Found top-level device {} of type {} with {} children".format(devAddress, devType, devChildcount))
+    with self.create_proxy() as proxy:
+      for device in self.fetch_devices_list(proxy):
+        devType = device.get('TYPE')
+        devParentType = device.get('PARENT_TYPE')
+        devParentAddress = device.get('PARENT')
+        devAddress = device.get('ADDRESS')
+        if devParentAddress == '':
+          if devType in self.supported_device_types:
+            devChildcount = len(device.get('CHILDREN'))
+            logging.info("Found top-level device {} of type {} with {} children".format(devAddress, devType, devChildcount))
+            logging.debug(pformat(device))
+          else:
+            logging.info("Found unsupported top-level device {} of type {}".format(devAddress, devType))
+        if devParentType in self.supported_device_types:
+          logging.debug("Found device {} of type {} in supported parent type {}".format(devAddress, devType, devParentType))
           logging.debug(pformat(device))
-        else:
-          logging.info("Found unsupported top-level device {} of type {}".format(devAddress, devType))
-      if devParentType in self.supported_device_types:
-        logging.debug("Found device {} of type {} in supported parent type {}".format(devAddress, devType, devParentType))
-        logging.debug(pformat(device))
 
-        allowFailedChannel = False
-        invalidChannels = self.channels_with_errors_allowed.get(devParentType)
-        if invalidChannels is not None:
-          channel = int(devAddress[devAddress.find(":")+1:])
-          if channel in invalidChannels:
-            allowFailedChannel = True
+          allowFailedChannel = False
+          invalidChannels = self.channels_with_errors_allowed.get(devParentType)
+          if invalidChannels is not None:
+            channel = int(devAddress[devAddress.find(":")+1:])
+            if channel in invalidChannels:
+              allowFailedChannel = True
 
-        if 'VALUES' in device.get('PARAMSETS'):
-          paramsetDescription = self.fetch_param_set_description(devAddress)
-          try:
-            paramset = self.fetch_param_set(devAddress)
-          except xmlrpc.client.Fault:
-            if allowFailedChannel:
-              logging.debug("Error reading paramset for device {} of type {} in parent type {} (expected)".format(devAddress, devType, devParentType))
-              continue
-            else:
-              logging.info("Error reading paramset for device {} of type {} in parent type {} (unexpected)".format(devAddress, devType, devParentType))
-              raise
+          if 'VALUES' in device.get('PARAMSETS'):
+            paramsetDescription = self.fetch_param_set_description(proxy, devAddress)
+            try:
+              paramset = self.fetch_param_set(proxy, devAddress)
+            except xmlrpc.client.Fault:
+              if allowFailedChannel:
+                logging.debug("Error reading paramset for device {} of type {} in parent type {} (expected)".format(devAddress, devType, devParentType))
+                continue
+              else:
+                logging.info("Error reading paramset for device {} of type {} in parent type {} (unexpected)".format(devAddress, devType, devParentType))
+                raise
 
-          for key in paramsetDescription:
-            paramDesc = paramsetDescription.get(key)
-            paramType = paramDesc.get('TYPE')
-            paramState = paramset.get(key)
-            if paramState is None:
-              paramIsUndefined = True
-              paramValue = None
-            else:
-              paramIsUndefined = paramState.get('UNDEFINED')
-              paramValue = paramState.get('VALUE')
+            for key in paramsetDescription:
+              paramDesc = paramsetDescription.get(key)
+              paramType = paramDesc.get('TYPE')
+              paramState = paramset.get(key)
+              if paramState is None:
+                paramIsUndefined = True
+                paramValue = None
+              else:
+                paramIsUndefined = paramState.get('UNDEFINED')
+                paramValue = paramState.get('VALUE')
 
-            if paramIsUndefined:
-              continue # Ignore this parameter, we have no value (yet)
+              if paramIsUndefined:
+                continue # Ignore this parameter, we have no value (yet)
 
-            if paramType in ['FLOAT', 'INTEGER', 'BOOL']:
-              self.process_single_value(devAddress, devType, devParentAddress, devParentType, paramType, key, paramValue)
-            elif paramType == 'ENUM':
-              logging.debug("Found {}: desc: {} key: {}".format(paramType, paramDesc, paramValue))
-              self.process_enum(devAddress, devType, devParentAddress, devParentType, paramType, key, paramValue, paramDesc.get('VALUE_LIST'))
-            else:
-              # ATM Unsupported like HEATING_CONTROL_HMIP.PARTY_TIME_START,
-              # HEATING_CONTROL_HMIP.PARTY_TIME_END, COMBINED_PARAMETER or ACTION
-              logging.debug("Unknown paramType {}, desc: {}, undefined: {}, key: {}".format(paramType, paramDesc, paramIsUndefined, paramValue))
+              if paramType in ['FLOAT', 'INTEGER', 'BOOL']:
+                self.process_single_value(devAddress, devType, devParentAddress, devParentType, paramType, key, paramValue)
+              elif paramType == 'ENUM':
+                logging.debug("Found {}: desc: {} key: {}".format(paramType, paramDesc, paramValue))
+                self.process_enum(devAddress, devType, devParentAddress, devParentType, paramType, key, paramValue, paramDesc.get('VALUE_LIST'))
+              else:
+                # ATM Unsupported like HEATING_CONTROL_HMIP.PARTY_TIME_START,
+                # HEATING_CONTROL_HMIP.PARTY_TIME_END, COMBINED_PARAMETER or ACTION
+                logging.debug("Unknown paramType {}, desc: {}, undefined: {}, key: {}".format(paramType, paramDesc, paramIsUndefined, paramValue))
 
-          if paramset:
-            logging.debug("ParamsetDescription for {}".format(devAddress))
-            logging.debug(pformat(paramsetDescription))
-            logging.debug("Paramset for {}".format(devAddress))
-            logging.debug(pformat(paramset))
+            if paramset:
+              logging.debug("ParamsetDescription for {}".format(devAddress))
+              logging.debug(pformat(paramsetDescription))
+              logging.debug("Paramset for {}".format(devAddress))
+              logging.debug(pformat(paramset))
 
   def create_proxy(self):
     transport = xmlrpc.client.Transport()
@@ -244,23 +245,20 @@ class HomematicMetricsProcessor(threading.Thread):
     connection.timeout = 5
     return xmlrpc.client.ServerProxy(self.ccu_url, transport=transport)
 
-  def fetch_devices_list(self):
-    with self.create_proxy() as proxy:
-      result = []
-      for entry in proxy.listDevices():
-        result.append(entry)
-      self.devicecount.labels(self.ccu_host).set(len(result))
-      return result
+  def fetch_devices_list(self, proxy):
+    result = []
+    for entry in proxy.listDevices():
+      result.append(entry)
+    self.devicecount.labels(self.ccu_host).set(len(result))
+    return result
 
-  def fetch_param_set_description(self, address):
-    with self.create_proxy() as proxy:
-      return proxy.getParamsetDescription(address, 'VALUES')
+  def fetch_param_set_description(self, proxy, address):
+    return proxy.getParamsetDescription(address, 'VALUES')
 
-  def fetch_param_set(self, address):
-    with self.create_proxy() as proxy:
-      # mode=1 allows to read undefined values
-      # (if there is any undefined value in the paramset, BidcosRF does not return the parameset)
-      return proxy.getParamset(address, 'VALUES', 1)
+  def fetch_param_set(self, proxy, address):
+    # mode=1 allows to read undefined values
+    # (if there is any undefined value in the paramset, BidcosRF does not return the parameset)
+    return proxy.getParamset(address, 'VALUES', 1)
 
   def resolve_mapped_name(self, deviceAddress, parentDeviceAddress):
     if deviceAddress in self.mapped_names:
@@ -350,7 +348,7 @@ class HomematicMetricsProcessor(threading.Thread):
         if len(line_parts)==4 and (line_parts[0]=="D" or line_parts[0]=="C"):
           # for devices and channels
           ccu_mapped_names[line_parts[1]] = line_parts[2]
- 
+
     return ccu_mapped_names
 
 class _ThreadingSimpleServer(ThreadingMixIn, HTTPServer):
@@ -385,12 +383,14 @@ if __name__ == '__main__':
   PROCESSOR = HomematicMetricsProcessor(ARGS.ccu_host, ARGS.ccu_port, ARGS.interval, ARGS.namereload, ARGS.config_file)
 
   if ARGS.dump_devices:
-    print(pformat(PROCESSOR.fetch_devices_list()))
+    with PROCESSOR.create_proxy() as s_proxy:
+      print(pformat(PROCESSOR.fetch_devices_list(s_proxy)))
   elif ARGS.dump_parameters:
-    print("getParamsetDescription:")
-    print(pformat(PROCESSOR.fetch_param_set_description(ARGS.dump_parameters)))
-    print("getParamset:")
-    print(pformat(PROCESSOR.fetch_param_set(ARGS.dump_parameters)))
+    with PROCESSOR.create_proxy() as s_proxy:
+      print("getParamsetDescription:")
+      print(pformat(PROCESSOR.fetch_param_set_description(s_proxy, ARGS.dump_parameters)))
+      print("getParamset:")
+      print(pformat(PROCESSOR.fetch_param_set(s_proxy, ARGS.dump_parameters)))
   else:
     PROCESSOR.start()
     # Start up the server to expose the metrics.
