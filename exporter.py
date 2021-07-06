@@ -27,6 +27,7 @@ class HomematicMetricsProcessor(threading.Thread):
     'HmIP-RCV-1',
     'HmIP-STH',
     'HmIP-STHD',
+    'HmIP-PSM-CH',
     'HmIP-SWD',
     'HMIP-SWDO',
     'HmIP-SWSD',
